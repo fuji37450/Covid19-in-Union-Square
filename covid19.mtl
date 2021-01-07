@@ -10,9 +10,9 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2
-map_Bump C:\\Users\\YoRHa\\Desktop\\VirusComplete\\textures\\VirusComplete_Parts_Normal.png
-map_Kd C:\\Users\\YoRHa\\Desktop\\VirusComplete\\textures\\VirusComplete_Parts_diff.png
-map_Ns C:\\Users\\YoRHa\\Desktop\\VirusComplete\\textures\\VirusComplete_Parts_Roughness.png
+map_Bump VirusComplete_Parts_Normal.png
+map_Kd VirusComplete_Parts_diff.png
+map_Ns VirusComplete_Parts_Roughness.png
 
 newmtl SphereLow
 Ns 225.000000
@@ -23,6 +23,6 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.450000
 d 1.000000
 illum 2
-map_Bump C:\\Users\\YoRHa\\Desktop\\VirusComplete\\textures\\VirusComplete_SphereLow_Normal.png
-map_Kd C:\\Users\\YoRHa\\Desktop\\VirusComplete\\textures\\VirusComplete_SphereLow_diff.png
-map_Ns C:\\Users\\YoRHa\\Desktop\\VirusComplete\\textures\\VirusComplete_SphereLow_Roughness.png
+map_Bump VirusComplete_SphereLow_Normal.png
+map_Kd VirusComplete_SphereLow_diff.png
+map_Ns VirusComplete_SphereLow_Roughness.png

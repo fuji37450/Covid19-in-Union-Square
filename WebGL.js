@@ -36,7 +36,7 @@ var FSHADER_SOURCE = `
         vec3 texColor0 = texture2D( u_Sampler, v_TexCoord ).rgb;
         vec3 texColor = texColor0;
 
-        if(u_isTexture == 0.0){
+        if(u_isTexture == -1.0){
             texColor = u_Color.rgb;
         }
 
@@ -206,14 +206,13 @@ var normalMatrix;
 var nVertex;
 var cameraX = 0, cameraY = 5, cameraZ = 10;
 var cameraDirX = 0, cameraDirY = 0, cameraDirZ = 1;
-var fox = [];
 var steve = [];
 var cubeObj = [];
 var covidObj = [];
 var quadObj;
 var cubeMapTex;
 var textures = {};
-var imgNames = ["fox.jpg", "Steve.png", 'VirusComplete_Parts_diff.png'];
+var imgNames = ["Steve.png", 'SphereLow_diff.png', 'Parts_diff.png'];
 var cube;
 var texCount = 0;
 var numTextures = imgNames.length;
@@ -274,7 +273,6 @@ async function main(){
                                       "posz.jpg", "negz.jpg", 512, 512)
     /* Cube Map end */
     
-    fox = await loadOBJtoCreateVBO('fox.obj');
     steve = await loadOBJtoCreateVBO('minecraft-steve.obj');
     cubeObj = await loadOBJtoCreateVBO('cube.obj');
     covidObj = await loadOBJtoCreateVBO('covid19.obj');
@@ -334,6 +332,7 @@ function drawOnScreen(mdlMatrix){
     gl.uniform1f(program.u_Kd, 0.7);
     gl.uniform1f(program.u_Ks, 1.0);
     gl.uniform1f(program.u_shininess, 10.0);
+    gl.uniform1f(program.u_isTexture, 0.0);
     gl.uniform1i(program.u_Sampler, 2);
 
     gl.uniformMatrix4fv(program.u_MvpMatrix, false, mvpMatrix.elements);
@@ -362,36 +361,27 @@ function drawRegularObject(){
     mdlMatrix.translate(0, 4, 3);
     mdlMatrix.scale(0.05, 0.05, 0.05);
     gl.uniform3f(program.u_Color, 1.0, 1.0, 1.0);
-    drawOneObject(cubeObj, mdlMatrix, 0.0);
+    drawOneObject(cubeObj, mdlMatrix, -1.0);
 
     //Cube (ground)
     mdlMatrix.setIdentity();
     mdlMatrix.scale(2.0, 0.1, 2.0);
     gl.uniform3f(program.u_Color, 0.3, 0.8, 0.4);
-    drawOneObject(cubeObj, mdlMatrix, 0.0);
+    drawOneObject(cubeObj, mdlMatrix, -1.0);
     
-    // fox
-    mdlMatrix.setIdentity();
-    mdlMatrix.rotate(angleX, 1, 1, 0);//for mouse rotation
-    mdlMatrix.scale(0.01, 0.01, 0.01);
-    gl.uniform1i(program.u_Sampler, 0);
-    drawOneObject(fox, mdlMatrix, 1.0);
-  
-    // covidObj
-    mdlMatrix.setIdentity();
-    mdlMatrix.translate(0.0, 2.0, 0.0);
-    mdlMatrix.scale(0.2, 0.2, 0.2);
-    gl.uniform1i(program.u_Sampler, 2);
-    drawOneObject(covidObj, mdlMatrix, 1.0);
-
     // steve
     mdlMatrix.setIdentity();
     mdlMatrix.translate(-1.0, 0.5, 1.0);
     mdlMatrix.rotate(-90, 0, 1, 0);
     mdlMatrix.scale(0.2, 0.2, 0.2);
-    gl.uniform1i(program.u_Sampler, 1);
-    drawOneObject(steve, mdlMatrix, 1.0);
+    drawOneObject(steve, mdlMatrix, 0.0);
   
+    // covidObj
+    mdlMatrix.setIdentity();
+    mdlMatrix.translate(0.0, 2.0, 0.0);
+    mdlMatrix.scale(0.2, 0.2, 0.2);
+    drawOneObject(covidObj, mdlMatrix, 1.0);
+
     drawEnvMap();
 
 }
@@ -423,21 +413,26 @@ function drawOneObject(obj, mdlMatrix, isTexture){
     gl.uniformMatrix4fv(program.u_modelMatrix, false, modelMatrix.elements);
     gl.uniformMatrix4fv(program.u_normalMatrix, false, normalMatrix.elements);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[0]]);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[1]]);
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[2]]);
-    
     for( let i=0; i < obj.length; i ++ ){
 
       initAttributeVariable(gl, program.a_Position, obj[i].vertexBuffer);
       initAttributeVariable(gl, program.a_Normal, obj[i].normalBuffer);
       
-      if(isTexture == 1.0){
+      if(isTexture >= 0.0){
+        gl.activeTexture(gl.TEXTURE0);
+        if(isTexture == 1.0){   //multiple components: covid
+          gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[isTexture+i]]);
+        }
+        else if(isTexture == 2.0){
+          gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[isTexture+i+1]]);
+        }
+        else{
+          gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[isTexture]]);
+        }
+        gl.uniform1i(program.u_Sampler, 0);
         initAttributeVariable(gl, program.a_TexCoord, obj[i].texCoordBuffer);
       }
+
       gl.drawArrays(gl.TRIANGLES, 0, obj[i].numVertices);
     }
 }
