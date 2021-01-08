@@ -2,17 +2,34 @@ var VSHADER_SOURCE = `
     attribute vec4 a_Position;
     attribute vec4 a_Normal;
     attribute vec2 a_TexCoord;
+    attribute vec3 a_Tagent;
+    attribute vec3 a_Bitagent;
+    attribute float a_crossTexCoord;
     uniform mat4 u_MvpMatrix;
     uniform mat4 u_modelMatrix;
     uniform mat4 u_normalMatrix;
     varying vec3 v_Normal;
     varying vec3 v_PositionInWorld;
     varying vec2 v_TexCoord;
+    varying mat4 v_TBN;
     void main(){
         gl_Position = u_MvpMatrix * a_Position;
         v_PositionInWorld = (u_modelMatrix * a_Position).xyz; 
         v_Normal = normalize(vec3(u_normalMatrix * a_Normal));
         v_TexCoord = a_TexCoord;
+        //create TBN matrix 
+        vec3 tagent = normalize(a_Tagent);
+        vec3 bitagent = normalize(a_Bitagent);
+        vec3 nVector;
+        if( a_crossTexCoord > 0.0){
+          nVector = cross(tagent, bitagent);
+        } else{
+          nVector = cross(bitagent, tagent);
+        }
+        v_TBN = mat4(tagent.x, tagent.y, tagent.z, 0.0, 
+                           bitagent.x, bitagent.y, bitagent.z, 0.0,
+                           nVector.x, nVector.y, nVector.z, 0.0, 
+                           0.0, 0.0, 0.0, 1.0);
     }    
 `;
 
@@ -24,17 +41,20 @@ var FSHADER_SOURCE = `
     uniform float u_Kd;
     uniform float u_Ks;
     uniform float u_shininess;
-    uniform sampler2D u_Sampler;
+    uniform sampler2D u_Sampler0;
+    uniform sampler2D u_Sampler1;
     uniform vec3 u_Color;
     uniform float u_isTexture;
+    uniform highp mat4 u_normalMatrix;
+    uniform bool u_normalMode;
     varying vec3 v_Normal;
     varying vec3 v_PositionInWorld;
     varying vec2 v_TexCoord;
+    varying mat4 v_TBN;
     void main(){
         // let ambient and diffuse color are u_Color 
         // (you can also input them from ouside and make them different)
-        vec3 texColor0 = texture2D( u_Sampler, v_TexCoord ).rgb;
-        vec3 texColor = texColor0;
+        vec3 texColor = texture2D( u_Sampler0, v_TexCoord ).rgb;
 
         if(u_isTexture == -1.0){
             texColor = u_Color.rgb;
@@ -47,7 +67,16 @@ var FSHADER_SOURCE = `
 
         vec3 ambient = ambientLightColor * u_Ka;
 
-        vec3 normal = normalize(v_Normal);
+        vec3 normal;
+        if( u_normalMode ){
+          //3D object's normal vector
+          normal = normalize(v_Normal);
+        }else{
+          // normal vector from normal map
+          vec3 nMapNormal = normalize( texture2D( u_Sampler1, v_TexCoord ).rgb * 2.0 - 1.0 );
+          normal = normalize( vec3( u_normalMatrix * v_TBN * vec4( nMapNormal, 1.0) ) );
+        }
+
         vec3 lightDirection = normalize(u_LightPosition - v_PositionInWorld);
         float nDotL = max(dot(lightDirection, normal), 0.0);
         vec3 diffuse = diffuseLightColor * u_Kd * nDotL;
@@ -148,13 +177,16 @@ function initArrayBufferForLaterUse(gl, data, num, type) {
   return buffer;
 }
 
-function initVertexBufferForLaterUse(gl, vertices, normals, texCoords){
+function initVertexBufferForLaterUse(gl, vertices, normals, texCoords, tagents, bitagents, crossTexCoords){
   var nVertices = vertices.length / 3;
 
   var o = new Object();
   o.vertexBuffer = initArrayBufferForLaterUse(gl, new Float32Array(vertices), 3, gl.FLOAT);
   if( normals != null ) o.normalBuffer = initArrayBufferForLaterUse(gl, new Float32Array(normals), 3, gl.FLOAT);
   if( texCoords != null ) o.texCoordBuffer = initArrayBufferForLaterUse(gl, new Float32Array(texCoords), 2, gl.FLOAT);
+  if( tagents != null ) o.tagentsBuffer = initArrayBufferForLaterUse(gl, new Float32Array(tagents), 3, gl.FLOAT);
+  if( bitagents != null ) o.bitagentsBuffer = initArrayBufferForLaterUse(gl, new Float32Array(bitagents), 3, gl.FLOAT);
+  if( crossTexCoords != null ) o.crossTexCoordsBuffer = initArrayBufferForLaterUse(gl, new Float32Array(crossTexCoords), 1, gl.FLOAT);
   //you can have error check here
   o.numVertices = nVertices;
 
@@ -212,7 +244,7 @@ var covidObj = [];
 var quadObj;
 var cubeMapTex;
 var textures = {};
-var imgNames = ["Steve.png", 'SphereLow_diff.png', 'Parts_diff.png'];
+var imgNames = ['Steve.png', 'SphereLow_diff.png', 'Parts_diff.png', 'SphereLow_Normal.png', 'Parts_Normal.png'];
 var cube;
 var texCount = 0;
 var numTextures = imgNames.length;
@@ -237,6 +269,9 @@ async function main(){
     program.a_Position = gl.getAttribLocation(program, 'a_Position'); 
     program.a_TexCoord = gl.getAttribLocation(program, 'a_TexCoord'); 
     program.a_Normal = gl.getAttribLocation(program, 'a_Normal'); 
+    program.a_Tagent = gl.getAttribLocation(program, 'a_Tagent'); 
+    program.a_Bitagent = gl.getAttribLocation(program, 'a_Bitagent'); 
+    program.a_crossTexCoord = gl.getAttribLocation(program, 'a_crossTexCoord'); 
     program.u_MvpMatrix = gl.getUniformLocation(program, 'u_MvpMatrix'); 
     program.u_modelMatrix = gl.getUniformLocation(program, 'u_modelMatrix'); 
     program.u_normalMatrix = gl.getUniformLocation(program, 'u_normalMatrix');
@@ -247,8 +282,10 @@ async function main(){
     program.u_Ks = gl.getUniformLocation(program, 'u_Ks');
     program.u_shininess = gl.getUniformLocation(program, 'u_shininess');
     program.u_Color = gl.getUniformLocation(program, 'u_Color');
-    program.u_Sampler = gl.getUniformLocation(program, "u_Sampler");
+    program.u_Sampler0 = gl.getUniformLocation(program, "u_Sampler0");
+    program.u_Sampler1 = gl.getUniformLocation(program, "u_Sampler1");
     program.u_isTexture = gl.getUniformLocation(program, 'u_isTexture'); 
+    program.u_normalMode = gl.getUniformLocation(program, 'u_normalMode');
 
     /* Cube Map start */
     var quad = new Float32Array(
@@ -333,7 +370,8 @@ function drawOnScreen(mdlMatrix){
     gl.uniform1f(program.u_Ks, 1.0);
     gl.uniform1f(program.u_shininess, 10.0);
     gl.uniform1f(program.u_isTexture, 0.0);
-    gl.uniform1i(program.u_Sampler, 2);
+    gl.uniform1i(program.u_Sampler0, 2);
+    gl.uniform1i(program.u_normalMode, 1);
 
     gl.uniformMatrix4fv(program.u_MvpMatrix, false, mvpMatrix.elements);
     gl.uniformMatrix4fv(program.u_modelMatrix, false, modelMatrix.elements);
@@ -346,6 +384,9 @@ function drawOnScreen(mdlMatrix){
       initAttributeVariable(gl, program.a_Position, cubeObj[i].vertexBuffer);
       initAttributeVariable(gl, program.a_TexCoord, cubeObj[i].texCoordBuffer);
       initAttributeVariable(gl, program.a_Normal, cubeObj[i].normalBuffer);
+      initAttributeVariable(gl, program.a_Tagent, cubeObj[i].tagentsBuffer);
+      initAttributeVariable(gl, program.a_Bitagent, cubeObj[i].bitagentsBuffer);
+      initAttributeVariable(gl, program.a_crossTexCoord, cubeObj[i].crossTexCoordsBuffer);
       gl.drawArrays(gl.TRIANGLES, 0, cubeObj[i].numVertices);
     }
 }
@@ -408,6 +449,9 @@ function drawOneObject(obj, mdlMatrix, isTexture){
     gl.uniform1f(program.u_Ks, 1.0);
     gl.uniform1f(program.u_shininess, 10.0);
     gl.uniform1f(program.u_isTexture, isTexture);
+    gl.uniform1i(program.u_normalMode, 1);
+    gl.uniform1i(program.u_Sampler0, 0);
+    gl.uniform1i(program.u_Sampler1, 1);
 
     gl.uniformMatrix4fv(program.u_MvpMatrix, false, mvpMatrix.elements);
     gl.uniformMatrix4fv(program.u_modelMatrix, false, modelMatrix.elements);
@@ -417,20 +461,22 @@ function drawOneObject(obj, mdlMatrix, isTexture){
 
       initAttributeVariable(gl, program.a_Position, obj[i].vertexBuffer);
       initAttributeVariable(gl, program.a_Normal, obj[i].normalBuffer);
-      
+      initAttributeVariable(gl, program.a_TexCoord, obj[i].texCoordBuffer);
+      initAttributeVariable(gl, program.a_Tagent, obj[i].tagentsBuffer);
+      initAttributeVariable(gl, program.a_Bitagent, obj[i].bitagentsBuffer);
+      initAttributeVariable(gl, program.a_crossTexCoord, obj[i].crossTexCoordsBuffer);
+
+      gl.activeTexture(gl.TEXTURE0);
       if(isTexture >= 0.0){
-        gl.activeTexture(gl.TEXTURE0);
         if(isTexture == 1.0){   //multiple components: covid
+          gl.uniform1i(program.u_normalMode, 0);
           gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[isTexture+i]]);
-        }
-        else if(isTexture == 2.0){
-          gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[isTexture+i+1]]);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[isTexture+i+2]]);
         }
         else{
           gl.bindTexture(gl.TEXTURE_2D, textures[imgNames[isTexture]]);
         }
-        gl.uniform1i(program.u_Sampler, 0);
-        initAttributeVariable(gl, program.a_TexCoord, obj[i].texCoordBuffer);
       }
 
       gl.drawArrays(gl.TRIANGLES, 0, obj[i].numVertices);
@@ -519,16 +565,83 @@ function initCubeTexture(posXName, negXName, posYName, negYName,
   return texture;
 }
 
+function calculateTangentSpace(position, texcoord){
+  //iterate through all triangles
+  let tagents = [];
+  let bitagents = [];
+  let crossTexCoords = [];
+  for( let i = 0; i < position.length/9; i++ ){
+    let v00 = position[i*9 + 0];
+    let v01 = position[i*9 + 1];
+    let v02 = position[i*9 + 2];
+    let v10 = position[i*9 + 3];
+    let v11 = position[i*9 + 4];
+    let v12 = position[i*9 + 5];
+    let v20 = position[i*9 + 6];
+    let v21 = position[i*9 + 7];
+    let v22 = position[i*9 + 8];
+    let uv00 = texcoord[i*6 + 0];
+    let uv01 = texcoord[i*6 + 1];
+    let uv10 = texcoord[i*6 + 2];
+    let uv11 = texcoord[i*6 + 3];
+    let uv20 = texcoord[i*6 + 4];
+    let uv21 = texcoord[i*6 + 5];
+
+    let deltaPos10 = v10 - v00;
+    let deltaPos11 = v11 - v01;
+    let deltaPos12 = v12 - v02;
+    let deltaPos20 = v20 - v00;
+    let deltaPos21 = v21 - v01;
+    let deltaPos22 = v22 - v02;
+
+    let deltaUV10 = uv10 - uv00;
+    let deltaUV11 = uv11 - uv01;
+    let deltaUV20 = uv20 - uv00;
+    let deltaUV21 = uv21 - uv01;
+
+    let r = 1.0 / (deltaUV10 * deltaUV21 - deltaUV11 * deltaUV20);
+    for( let j=0; j< 3; j++ ){
+      crossTexCoords.push( (deltaUV10 * deltaUV21 - deltaUV11 * deltaUV20) );
+    }
+    let tangentX = (deltaPos10 * deltaUV21 - deltaPos20 * deltaUV11)*r;
+    let tangentY = (deltaPos11 * deltaUV21 - deltaPos21 * deltaUV11)*r;
+    let tangentZ = (deltaPos12 * deltaUV21 - deltaPos22 * deltaUV11)*r;
+    for( let j = 0; j < 3; j++ ){
+      tagents.push(tangentX);
+      tagents.push(tangentY);
+      tagents.push(tangentZ);
+    }
+    let bitangentX = (deltaPos20 * deltaUV10 - deltaPos10 * deltaUV20)*r;
+    let bitangentY = (deltaPos21 * deltaUV10 - deltaPos11 * deltaUV20)*r;
+    let bitangentZ = (deltaPos22 * deltaUV10 - deltaPos12 * deltaUV20)*r;
+    for( let j = 0; j < 3; j++ ){
+      bitagents.push(bitangentX);
+      bitagents.push(bitangentY);
+      bitagents.push(bitangentZ);
+    }
+  }
+  let obj = {};
+  obj['tagents'] = tagents;
+  obj['bitagents'] = bitagents;
+  obj['crossTexCoords'] = crossTexCoords;
+  return obj;
+}
+
 async function loadOBJtoCreateVBO( objFile ){
   let objComponents = [];
   response = await fetch(objFile);
   text = await response.text();
   obj = parseOBJ(text);
   for( let i=0; i < obj.geometries.length; i ++ ){
+    let tagentSpace = calculateTangentSpace(obj.geometries[i].data.position, 
+                                            obj.geometries[i].data.texcoord);
     let o = initVertexBufferForLaterUse(gl, 
                                         obj.geometries[i].data.position,
                                         obj.geometries[i].data.normal, 
-                                        obj.geometries[i].data.texcoord);
+                                        obj.geometries[i].data.texcoord,
+                                        tagentSpace.tagents,
+                                        tagentSpace.bitagents,
+                                        tagentSpace.crossTexCoords);
     objComponents.push(o);
   }
   return objComponents;
