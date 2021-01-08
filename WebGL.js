@@ -282,7 +282,9 @@ var numTextures = imgNames.length;
 var fbo;
 var offScreenWidth = 256, offScreenHeight = 256;
 var rotateAngle = 0;
-
+var steveMove = [0, 0, 0];
+var steveRotate = -90;
+var steveView = false;
 
 var mdlMatrix = new Matrix4(); //model matrix of objects
 
@@ -388,6 +390,16 @@ async function main(){
 }
 
 function draw(){
+	if(steveView){
+	    cameraX = -1.0+steveMove[1];
+	    cameraY = 2.0+steveMove[2];
+	    cameraZ = 3.0+steveMove[0];
+	}
+	else{
+	    cameraX = 0;
+	    cameraY = 1;
+	    cameraZ = 7;
+	}
     renderCubeMap(0, 0, 0);
 
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -396,8 +408,13 @@ function draw(){
     gl.enable(gl.DEPTH_TEST);
 
     let rotateMatrix = new Matrix4();
-    rotateMatrix.setRotate(angleY, 1, 0, 0);//for mouse rotation
-    rotateMatrix.rotate(angleX, 0, 1, 0);//for mouse rotation
+    if(steveView){
+    	rotateMatrix.setRotate(steveRotate-90, 0, 1, 0);
+    }
+    else{
+	    rotateMatrix.setRotate(angleY, 1, 0, 0);//for mouse rotation
+	    rotateMatrix.rotate(angleX, 0, 1, 0);//for mouse rotation
+	}
     var viewDir= new Vector3([cameraDirX, cameraDirY, cameraDirZ]);
     var newViewDir = rotateMatrix.multiplyVector3(viewDir);
     vpMatrix.setIdentity();
@@ -434,16 +451,32 @@ function drawRegularObject(vpMatrix){
 
     // steve
     mdlMatrix.setIdentity();
-    mdlMatrix.translate(-1.0, 0.5, 3.0);
-    mdlMatrix.rotate(-90, 0, 1, 0);
+    mdlMatrix.translate(-1.0+steveMove[1], -1.0+steveMove[2], 3.0+steveMove[0]);
+    mdlMatrix.rotate(steveRotate, 0, 1, 0);
     mdlMatrix.scale(0.2, 0.2, 0.2);
     drawOneObject(steve, mdlMatrix, vpMatrix, 0.0);
   
     // covidObj
     mdlMatrix.setIdentity();
-    mdlMatrix.translate(2.0, 2.0, 2.0);
-    mdlMatrix.rotate(rotateAngle, 0, 1, 0);
+    mdlMatrix.rotate(rotateAngle*2, 0.0, 1, 0);
+    mdlMatrix.translate(-2.0, 5.0, 2.0);
     mdlMatrix.scale(0.2, 0.2, 0.2);
+    drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
+
+    // covidObj
+    mdlMatrix.setIdentity();
+    mdlMatrix.translate(-3.0, 0.0, 1.0);
+    mdlMatrix.rotate(rotateAngle*1.5, 0.5, 0.2, 0);
+    mdlMatrix.translate(-3.0, 2.0, 1.0);
+    mdlMatrix.scale(0.5, 0.5, 0.5);
+    drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
+
+    // covidObj
+    mdlMatrix.setIdentity();
+    mdlMatrix.translate(3.0, -1.0, 0.0);
+    mdlMatrix.rotate(rotateAngle*-2.5, 0.5, 0.3, 0.2);
+    mdlMatrix.translate(-3.0, 2.0, 1.0);
+    mdlMatrix.scale(0.1, 0.1, 0.1);
     drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
 
 }
@@ -876,6 +909,29 @@ function keydown(ev){
     cameraY -= (newViewDir.elements[1] * 0.1);
     cameraZ -= (newViewDir.elements[2] * 0.1);
   }
+  else if(ev.key == 'ArrowUp'){
+      if(steveView) steveMove[0] += 0.1;
+      else steveMove[0] -= 0.1;
+  }
+  else if(ev.key == 'ArrowDown'){
+      if(steveView) steveMove[0] -= 0.1;
+      else steveMove[0] += 0.1;
+  }
+  else if(ev.key == 'ArrowLeft'){
+      if(steveView) steveMove[1] += 0.1;
+      else steveMove[1] -= 0.1;
+  }
+  else if(ev.key == 'ArrowRight'){
+      if(steveView) steveMove[1] -= 0.1;
+      else steveMove[1] += 0.1;
+  }
+  else if(ev.key == 'r'){
+      steveRotate += 5;
+  }
+  else if(ev.key == 'v'){
+  	  steveView = !steveView;
+  }
+
   draw();
 }
 
