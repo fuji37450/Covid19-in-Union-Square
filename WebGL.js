@@ -94,6 +94,36 @@ var FSHADER_SOURCE = `
     }
 `;
 
+var VSHADER_SOURCE_TEXTURE_ON_CUBE = `
+  attribute vec4 a_Position;
+  attribute vec4 a_Normal;
+  uniform mat4 u_MvpMatrix;
+  uniform mat4 u_modelMatrix;
+  uniform mat4 u_normalMatrix;
+  varying vec3 v_Normal;
+  varying vec3 v_PositionInWorld;
+  void main() {
+    gl_Position = u_MvpMatrix * a_Position;
+    v_PositionInWorld = (u_modelMatrix * a_Position).xyz; 
+    v_Normal = normalize(vec3(u_normalMatrix * a_Normal));
+  } 
+`;
+
+var FSHADER_SOURCE_TEXTURE_ON_CUBE = `
+  precision mediump float;
+  uniform vec3 u_ViewPosition;
+  uniform vec3 u_Color;
+  uniform samplerCube u_envCubeMap;
+  varying vec3 v_Normal;
+  varying vec3 v_PositionInWorld;
+  void main() {
+    vec3 V = normalize(u_ViewPosition - v_PositionInWorld); 
+    vec3 normal = normalize(v_Normal);
+    vec3 R = reflect(-V, normal);
+    gl_FragColor = vec4(0.78 * textureCube(u_envCubeMap, R).rgb + 0.3 * u_Color, 1.0);
+  }
+`;
+
 var VSHADER_SOURCE_ENVCUBE = `
   attribute vec4 a_Position;
   varying vec4 v_Position;
@@ -236,11 +266,12 @@ var mvpMatrix;
 var modelMatrix;
 var normalMatrix;
 var nVertex;
-var cameraX = 0, cameraY = 5, cameraZ = 10;
-var cameraDirX = 0, cameraDirY = 0, cameraDirZ = 1;
+var cameraX = 0, cameraY = 1, cameraZ = 7;
+var cameraDirX = 0, cameraDirY = 0, cameraDirZ = -1;
 var steve = [];
 var cubeObj = [];
 var covidObj = [];
+var sphereObj = [];
 var quadObj;
 var cubeMapTex;
 var textures = {};
@@ -250,6 +281,7 @@ var texCount = 0;
 var numTextures = imgNames.length;
 var fbo;
 var offScreenWidth = 256, offScreenHeight = 256;
+var rotateAngle = 0;
 
 
 var mdlMatrix = new Matrix4(); //model matrix of objects
@@ -287,6 +319,16 @@ async function main(){
     program.u_isTexture = gl.getUniformLocation(program, 'u_isTexture'); 
     program.u_normalMode = gl.getUniformLocation(program, 'u_normalMode');
 
+    programTextureOnCube = compileShader(gl, VSHADER_SOURCE_TEXTURE_ON_CUBE, FSHADER_SOURCE_TEXTURE_ON_CUBE);
+    programTextureOnCube.a_Position = gl.getAttribLocation(programTextureOnCube, 'a_Position'); 
+    programTextureOnCube.a_Normal = gl.getAttribLocation(programTextureOnCube, 'a_Normal'); 
+    programTextureOnCube.u_MvpMatrix = gl.getUniformLocation(programTextureOnCube, 'u_MvpMatrix'); 
+    programTextureOnCube.u_modelMatrix = gl.getUniformLocation(programTextureOnCube, 'u_modelMatrix'); 
+    programTextureOnCube.u_normalMatrix = gl.getUniformLocation(programTextureOnCube, 'u_normalMatrix');
+    programTextureOnCube.u_ViewPosition = gl.getUniformLocation(programTextureOnCube, 'u_ViewPosition');
+    programTextureOnCube.u_envCubeMap = gl.getUniformLocation(programTextureOnCube, 'u_envCubeMap'); 
+    programTextureOnCube.u_Color = gl.getUniformLocation(programTextureOnCube, 'u_Color'); 
+
     /* Cube Map start */
     var quad = new Float32Array(
       [
@@ -313,15 +355,17 @@ async function main(){
     steve = await loadOBJtoCreateVBO('minecraft-steve.obj');
     cubeObj = await loadOBJtoCreateVBO('cube.obj');
     covidObj = await loadOBJtoCreateVBO('covid19.obj');
+    sphereObj = await loadOBJtoCreateVBO('sphere.obj');
 
-    fbo = initFrameBuffer(gl);
+    fbo = initFrameBufferForCubemapRendering(gl);
 
     for( let i=0; i < imgNames.length; i ++ ){
       let image = new Image();
       image.onload = function(){initTexture(gl, image, imgNames[i]);};
       image.src = imgNames[i];
     }
-
+    
+    vpMatrix = new Matrix4();
     mvpMatrix = new Matrix4();
     modelMatrix = new Matrix4();
     normalMatrix = new Matrix4();
@@ -334,66 +378,50 @@ async function main(){
     canvas.onmousemove = function(ev){mouseMove(ev)};
     canvas.onmouseup = function(ev){mouseUp(ev)};
     document.onkeydown = function(ev){keydown(ev)};
-
+    
+    var tick = function() {
+      rotateAngle += 0.45;
+      draw();
+      requestAnimationFrame(tick);
+    }
+    tick();
 }
 
 function draw(){
-    drawRegularObject();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-    gl.viewport(0, 0, offScreenWidth, offScreenHeight);
-    drawRegularObject();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    renderCubeMap(0, 0, 0);
+
     gl.viewport(0, 0, canvas.width, canvas.height);
-    drawOnScreen();
+    gl.clearColor(0.4,0.4,0.4,1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+
+    let rotateMatrix = new Matrix4();
+    rotateMatrix.setRotate(angleY, 1, 0, 0);//for mouse rotation
+    rotateMatrix.rotate(angleX, 0, 1, 0);//for mouse rotation
+    var viewDir= new Vector3([cameraDirX, cameraDirY, cameraDirZ]);
+    var newViewDir = rotateMatrix.multiplyVector3(viewDir);
+    vpMatrix.setIdentity();
+    vpMatrix.setPerspective(70, 1, 1, 100);
+    vpMatrix.lookAt(cameraX, cameraY, cameraZ,   
+                cameraX + newViewDir.elements[0], 
+                cameraY + newViewDir.elements[1],
+                cameraZ + newViewDir.elements[2], 
+                0, 1, 0);
+
+    drawRegularObject(vpMatrix);
+
+    mdlMatrix.setIdentity();
+    mdlMatrix.setScale(0.5, 0.5, 0.5);
+    drawObjectWithDynamicReflection(sphereObj, mdlMatrix, vpMatrix);
+
+    drawEnvMap(vpMatrix);
+    // gl.viewport(0, 0, canvas.width, canvas.height);
 }
-function drawOnScreen(mdlMatrix){
-    //model Matrix (part of the mvp matrix)
-    let modelMatrix = new Matrix4();
-    let mvpMatrix = new Matrix4();
-    let normalMatrix = new Matrix4();
 
-    modelMatrix.translate(2.0, 3.0, 0.0);
-    modelMatrix.scale(1.2, 1.2, 1.2);
-    //mvp: projection * view * model matrix  
-    mvpMatrix.setPerspective(70, 1, 1, 100);
-    mvpMatrix.lookAt(cameraX, cameraY, cameraZ, 0, 0, 0, 0, 1, 0);
-    mvpMatrix.multiply(modelMatrix);
-
-    //normal matrix
-    normalMatrix.setInverseOf(modelMatrix);
-    normalMatrix.transpose();
-
-    gl.uniform3f(program.u_LightPosition, 0, 5, 3);
-    gl.uniform3f(program.u_ViewPosition, cameraX, cameraY, cameraZ);
-    gl.uniform1f(program.u_Ka, 0.2);
-    gl.uniform1f(program.u_Kd, 0.7);
-    gl.uniform1f(program.u_Ks, 1.0);
-    gl.uniform1f(program.u_shininess, 10.0);
-    gl.uniform1f(program.u_isTexture, 0.0);
-    gl.uniform1i(program.u_Sampler0, 2);
-    gl.uniform1i(program.u_normalMode, 1);
-
-    gl.uniformMatrix4fv(program.u_MvpMatrix, false, mvpMatrix.elements);
-    gl.uniformMatrix4fv(program.u_modelMatrix, false, modelMatrix.elements);
-    gl.uniformMatrix4fv(program.u_normalMatrix, false, normalMatrix.elements);
-
-    gl.activeTexture(gl.TEXTURE2);
-    gl.bindTexture(gl.TEXTURE_2D, fbo.texture);
-    
-    for( let i=0; i < cubeObj.length; i ++ ){
-      initAttributeVariable(gl, program.a_Position, cubeObj[i].vertexBuffer);
-      initAttributeVariable(gl, program.a_TexCoord, cubeObj[i].texCoordBuffer);
-      initAttributeVariable(gl, program.a_Normal, cubeObj[i].normalBuffer);
-      initAttributeVariable(gl, program.a_Tagent, cubeObj[i].tagentsBuffer);
-      initAttributeVariable(gl, program.a_Bitagent, cubeObj[i].bitagentsBuffer);
-      initAttributeVariable(gl, program.a_crossTexCoord, cubeObj[i].crossTexCoordsBuffer);
-      gl.drawArrays(gl.TRIANGLES, 0, cubeObj[i].numVertices);
-    }
-}
 
 /////Call drawOneObject() here to draw all object one by one 
 ////   (setup the model matrix and color to draw)
-function drawRegularObject(){
+function drawRegularObject(vpMatrix){
     gl.clearColor(0,0,0,1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -402,40 +430,32 @@ function drawRegularObject(){
     mdlMatrix.translate(0, 4, 3);
     mdlMatrix.scale(0.05, 0.05, 0.05);
     gl.uniform3f(program.u_Color, 1.0, 1.0, 1.0);
-    drawOneObject(cubeObj, mdlMatrix, -1.0);
+    drawOneObject(cubeObj, mdlMatrix, vpMatrix, -1.0);
 
-    //Cube (ground)
-    mdlMatrix.setIdentity();
-    mdlMatrix.scale(2.0, 0.1, 2.0);
-    gl.uniform3f(program.u_Color, 0.3, 0.8, 0.4);
-    drawOneObject(cubeObj, mdlMatrix, -1.0);
-    
     // steve
     mdlMatrix.setIdentity();
-    mdlMatrix.translate(-1.0, 0.5, 1.0);
+    mdlMatrix.translate(-1.0, 0.5, 3.0);
     mdlMatrix.rotate(-90, 0, 1, 0);
     mdlMatrix.scale(0.2, 0.2, 0.2);
-    drawOneObject(steve, mdlMatrix, 0.0);
+    drawOneObject(steve, mdlMatrix, vpMatrix, 0.0);
   
     // covidObj
     mdlMatrix.setIdentity();
-    mdlMatrix.translate(0.0, 2.0, 0.0);
+    mdlMatrix.translate(2.0, 2.0, 2.0);
+    mdlMatrix.rotate(rotateAngle, 0, 1, 0);
     mdlMatrix.scale(0.2, 0.2, 0.2);
-    drawOneObject(covidObj, mdlMatrix, 1.0);
-
-    drawEnvMap();
+    drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
 
 }
 
 //obj: the object components
 //mdlMatrix: the model matrix without mouse rotation
-function drawOneObject(obj, mdlMatrix, isTexture){
+function drawOneObject(obj, mdlMatrix, vpMatrix, isTexture){
     //model Matrix (part of the mvp matrix)
     modelMatrix.setIdentity();
     modelMatrix.multiply(mdlMatrix);
     //mvp: projection * view * model matrix  
-    mvpMatrix.setPerspective(30, 1, 1, 100);
-    mvpMatrix.lookAt(cameraX, cameraY, cameraZ, 0, 0, 0, 0, 1, 0);
+    mvpMatrix.set(vpMatrix);
     mvpMatrix.multiply(modelMatrix);
 
     //normal matrix
@@ -483,21 +503,34 @@ function drawOneObject(obj, mdlMatrix, isTexture){
     }
 }
 
-function drawEnvMap(){
+function drawObjectWithDynamicReflection(obj, modelMatrix, vpMatrix){
+  gl.useProgram(programTextureOnCube);
+  
+  mvpMatrix.set(vpMatrix);
+  mvpMatrix.multiply(modelMatrix);
 
-  let rotateMatrix = new Matrix4();
-  rotateMatrix.setRotate(angleY, 1, 0, 0);//for mouse rotation
-  rotateMatrix.rotate(angleX, 0, 1, 0);//for mouse rotation
-  var viewDir= new Vector3([cameraDirX, cameraDirY, cameraDirZ]);
-  var newViewDir = rotateMatrix.multiplyVector3(viewDir);
+  //normal matrix
+  normalMatrix.setInverseOf(modelMatrix);
+  normalMatrix.transpose();
 
-  let vpMatrix = new Matrix4();
-  vpMatrix.setPerspective(70, 1, 1, 100);
-  vpMatrix.lookAt(cameraX, cameraY, cameraZ,   
-                cameraX + newViewDir.elements[0], 
-                cameraY + newViewDir.elements[1],
-                cameraZ + newViewDir.elements[2], 
-                0, 1, 0);
+  gl.uniform3f(programTextureOnCube.u_ViewPosition, cameraX, cameraY, cameraZ);
+
+  gl.uniformMatrix4fv(programTextureOnCube.u_MvpMatrix, false, mvpMatrix.elements);
+  gl.uniformMatrix4fv(programTextureOnCube.u_modelMatrix, false, modelMatrix.elements);
+  gl.uniformMatrix4fv(programTextureOnCube.u_normalMatrix, false, normalMatrix.elements);
+
+  gl.activeTexture(gl.TEXTURE2);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, fbo.texture);
+  gl.uniform1i(programTextureOnCube.u_envCubeMap, 2);
+
+  for( let i=0; i < obj.length; i ++ ){
+    initAttributeVariable(gl, programTextureOnCube.a_Position, obj[i].vertexBuffer);
+    initAttributeVariable(gl, programTextureOnCube.a_Normal, obj[i].normalBuffer);
+    gl.drawArrays(gl.TRIANGLES, 0, obj[i].numVertices);
+  }
+}
+
+function drawEnvMap(vpMatrix){
 
   var vpMatrixInverse = vpMatrix.invert();
   gl.useProgram(programEnvCube);
@@ -894,3 +927,81 @@ function initFrameBuffer(gl){
   return frameBuffer;
 }
 
+function initFrameBufferForCubemapRendering(gl){
+  var texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
+
+  // 6 2D textures
+  gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  for (let i = 0; i < 6; i++) {
+    gl.texImage2D(gl.TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, 
+                  gl.RGBA, offScreenWidth, offScreenHeight, 0, gl.RGBA, 
+                  gl.UNSIGNED_BYTE, null);
+  }
+
+  //create and setup a render buffer as the depth buffer
+  var depthBuffer = gl.createRenderbuffer();
+  gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
+  gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, 
+                          offScreenWidth, offScreenHeight);
+
+  //create and setup framebuffer: linke the depth buffer to it (no color buffer here)
+  var frameBuffer = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, 
+                              gl.RENDERBUFFER, depthBuffer);
+
+  frameBuffer.texture = texture;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  return frameBuffer;
+}
+
+function renderCubeMap(camX, camY, camZ)
+{
+  //camera 6 direction to render 6 cubemap faces
+  var ENV_CUBE_LOOK_DIR = [
+      [1.0, 0.0, 0.0],
+      [-1.0, 0.0, 0.0],
+      [0.0, 1.0, 0.0],
+      [0.0, -1.0, 0.0],
+      [0.0, 0.0, 1.0],
+      [0.0, 0.0, -1.0]
+  ];
+
+  //camera 6 look up vector to render 6 cubemap faces
+  var ENV_CUBE_LOOK_UP = [
+      [0.0, -1.0, 0.0],
+      [0.0, -1.0, 0.0],
+      [0.0, 0.0, 1.0],
+      [0.0, 0.0, -1.0],
+      [0.0, -1.0, 0.0],
+      [0.0, -1.0, 0.0]
+  ];
+
+  gl.useProgram(program);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, offScreenWidth, offScreenHeight);
+  gl.clearColor(0.4, 0.4, 0.4,1);
+  for (var side = 0; side < 6;side++){
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, 
+                            gl.TEXTURE_CUBE_MAP_POSITIVE_X+side, fbo.texture, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    let vpMatrix = new Matrix4();
+    vpMatrix.setPerspective(90, 1, 1, 100);
+    vpMatrix.lookAt(camX, camY, camZ,   
+                    camX + ENV_CUBE_LOOK_DIR[side][0], 
+                    camY + ENV_CUBE_LOOK_DIR[side][1],
+                    camZ + ENV_CUBE_LOOK_DIR[side][2], 
+                    ENV_CUBE_LOOK_UP[side][0],
+                    ENV_CUBE_LOOK_UP[side][1],
+                    ENV_CUBE_LOOK_UP[side][2]);
+  
+    drawRegularObject(vpMatrix);
+    drawEnvMap(vpMatrix);
+
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
