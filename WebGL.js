@@ -306,8 +306,8 @@ async function main(){
 
     quadObj = initVertexBufferForLaterUse(gl, quad);
 
-    cubeMapTex = initCubeTexture("posx.jpg", "negx.jpg", "posy.jpg", "negy.jpg", 
-                                      "posz.jpg", "negz.jpg", 512, 512)
+    cubeMapTex = initCubeTexture("pos-x.jpg", "neg-x.jpg", "pos-y.jpg", "neg-y.jpg", 
+                                      "pos-z.jpg", "neg-z.jpg", 512, 512)
     /* Cube Map end */
     
     steve = await loadOBJtoCreateVBO('minecraft-steve.obj');
