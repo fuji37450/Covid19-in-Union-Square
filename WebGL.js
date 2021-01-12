@@ -350,8 +350,8 @@ async function main(){
 
     quadObj = initVertexBufferForLaterUse(gl, quad);
 
-    cubeMapTex = initCubeTexture("pos-x.jpg", "neg-x.jpg", "pos-y.jpg", "neg-y.jpg", 
-                                      "pos-z.jpg", "neg-z.jpg", 512, 512)
+    cubeMapTex = initCubeTexture("posx.jpg", "negx.jpg", "posy.jpg", "negy.jpg", 
+                                      "posz.jpg", "negz.jpg", 512, 512)
     /* Cube Map end */
     
     steve = await loadOBJtoCreateVBO('minecraft-steve.obj');
@@ -444,7 +444,7 @@ function drawRegularObject(vpMatrix){
 
     //light
     mdlMatrix.setIdentity();
-    mdlMatrix.translate(0, 4, 3);
+    mdlMatrix.translate(0, 3, 3);
     mdlMatrix.scale(0.05, 0.05, 0.05);
     gl.uniform3f(program.u_Color, 1.0, 1.0, 1.0);
     drawOneObject(cubeObj, mdlMatrix, vpMatrix, -1.0);
@@ -458,6 +458,7 @@ function drawRegularObject(vpMatrix){
   
     // covidObj
     mdlMatrix.setIdentity();
+    mdlMatrix.translate(1.0, -2.0, 1.0);
     mdlMatrix.rotate(rotateAngle*2, 0.0, 1, 0);
     mdlMatrix.translate(-2.0, 5.0, 2.0);
     mdlMatrix.scale(0.2, 0.2, 0.2);
@@ -465,8 +466,8 @@ function drawRegularObject(vpMatrix){
 
     // covidObj
     mdlMatrix.setIdentity();
-    mdlMatrix.translate(-3.0, 0.0, 1.0);
-    mdlMatrix.rotate(rotateAngle*1.5, 0.5, 0.2, 0);
+    mdlMatrix.translate(-1.0, 0.0, 1.0);
+    mdlMatrix.rotate(rotateAngle*1.5, 0.2, 0.2, 0.2);
     mdlMatrix.translate(-3.0, 2.0, 1.0);
     mdlMatrix.scale(0.5, 0.5, 0.5);
     drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
@@ -476,7 +477,22 @@ function drawRegularObject(vpMatrix){
     mdlMatrix.translate(3.0, -1.0, 0.0);
     mdlMatrix.rotate(rotateAngle*-2.5, 0.5, 0.3, 0.2);
     mdlMatrix.translate(-3.0, 2.0, 1.0);
-    mdlMatrix.scale(0.1, 0.1, 0.1);
+    mdlMatrix.scale(0.15, 0.15, 0.15);
+    drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
+
+    // covidObj
+    mdlMatrix.setIdentity();
+    mdlMatrix.rotate(rotateAngle*2.5, 0.5, 0.3, 0.2);
+    mdlMatrix.translate(-3.0, 2.0, 1.0);
+    mdlMatrix.scale(0.15, 0.15, 0.15);
+    drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
+
+    // covidObj
+    mdlMatrix.setIdentity();
+    mdlMatrix.translate(1.0, 0.0, 0.0);
+    mdlMatrix.rotate(rotateAngle*3, 0.1, 0.4, 0.6);
+    mdlMatrix.translate(-3.0, 2.0, 1.0);
+    mdlMatrix.scale(0.3, 0.3, 0.3);
     drawOneObject(covidObj, mdlMatrix, vpMatrix, 1.0);
 
 }
@@ -495,7 +511,7 @@ function drawOneObject(obj, mdlMatrix, vpMatrix, isTexture){
     normalMatrix.setInverseOf(modelMatrix);
     normalMatrix.transpose();
 
-    gl.uniform3f(program.u_LightPosition, 0, 5, 3);
+    gl.uniform3f(program.u_LightPosition, 0, 3, 3);
     gl.uniform3f(program.u_ViewPosition, cameraX, cameraY, cameraZ);
     gl.uniform1f(program.u_Ka, 0.2);
     gl.uniform1f(program.u_Kd, 0.7);
